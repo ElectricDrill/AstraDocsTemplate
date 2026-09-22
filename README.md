@@ -10,13 +10,27 @@ Use this procedure when adding documentation for a new package. It creates a pub
 
 Before creating the first project, prepare the shared publishing environment:
 
-- A protected Linux self-hosted GitHub Actions runner registered to the `ElectricDrillStudios` organization, with the `astra-unity` label. Install the supported Unity LTS editor, Git, Python 3.11 or later, and .NET SDK 8 on that machine. The standard publishing host is `Cis8/AstraPublishingHost`.
+- One or more protected Linux self-hosted GitHub Actions runners registered to the `ElectricDrillStudios` organization, each with the `astra-unity` label. Install the supported Unity LTS editor, Git, Python 3.11 or later, and .NET SDK 8 on every eligible runner. The standard publishing host is `Cis8/AstraPublishingHost`.
 - Restrict the runner group to trusted `Astra*Docs` repositories only. Because the documentation repositories are public and the runner consumes a secret, protect `main` so that only trusted maintainers can push to it or change workflows.
 - The `ElectricDrillStudios/AstraDocsTemplate` GitHub repository must have **Template repository** enabled in its General settings.
-- An authenticated GitHub CLI session that may create public repositories in `ElectricDrillStudios` and configure their Pages settings and secrets.
+- An authenticated GitHub CLI session that may create public repositories in `ElectricDrillStudios` and configure their Pages settings and secrets. Authenticate it for HTTPS Git operations before bootstrapping:
+
+  ```sh
+  gh auth login --hostname github.com --web --git-protocol https
+  gh auth setup-git
+  gh auth status
+  ```
 - A fine-grained personal access token named `ASTRA_SOURCE_READ_TOKEN`. Create it under the `Cis8` resource owner, grant it **Contents: Read-only**, and restrict it to `Cis8/AstraPublishingHost`, the target package repository, and any private Astra dependency repositories that may appear in the release lock. Use a short, manageable expiry. No write, Actions, Administration, or Workflow permission is needed.
 
 Keep the token out of committed files, `.env` files, and `release-lock.yml`. If Unity opens the publishing host for the first time, commit the `.meta` files it creates to that private host repository.
+
+On every runner, set `UNITY_EXECUTABLE` in the runner application's local `.env` file to that machine's absolute Unity executable path, then restart its runner service. For example:
+
+```text
+UNITY_EXECUTABLE=/opt/Unity/Hub/Editor/2022.3.62f1/Editor/Unity
+```
+
+This is intentionally runner-local: two runners can use different filesystem paths. Keep all runners matched to the Unity version required by the publishing host. If they need different Unity versions, give each version a distinct label and target the compatible label in the workflow rather than allowing arbitrary scheduling.
 
 ### Bootstrap the repository
 
@@ -33,17 +47,18 @@ python3 tools/astra_docs.py new Health \
   --assembly com.electricdrill.astra-health.Runtime \
   --namespace 'ElectricDrill.Astra.Health' \
   --source-repo Cis8/AstraHealth \
-  --source-path Packages/com.electricdrill.astra-health \
-  --unity-path /opt/Unity/Hub/Editor/2022.3.62f1/Editor/Unity
+  --source-path Packages/com.electricdrill.astra-health
 ```
 
 `Health` must be a PascalCase name made from letters and digits. The command creates `ElectricDrillStudios/AstraHealthDocs` and a local `AstraHealthDocs` checkout inside the current directory. Omit `--source-path` only when the package lives at `Packages/<package-id>`. Use `--ref` to choose an initial source revision; it defaults to `main`. Use `--owner` only when the public repository belongs to a different GitHub organization or user.
 
-The bootstrap command requires `ASTRA_SOURCE_READ_TOKEN`; it stores the value as a GitHub Actions secret in the new documentation repository, never in its tracked files. It also creates the `ASTRA_UNITY_PATH` Actions variable from `--unity-path` and enables GitHub Pages with GitHub Actions as its build source.
+The bootstrap command requires `ASTRA_SOURCE_READ_TOKEN`; it stores the value as a GitHub Actions secret in the new documentation repository and enables GitHub Pages with GitHub Actions as its build source. If GitHub CLI is not logged in, the command starts its browser-based HTTPS login automatically. In a single-runner setup, `--unity-path` remains available to set the repository-level `ASTRA_UNITY_PATH` override.
+
+If a bootstrap is interrupted after GitHub creates the repository, authenticate again and rerun the same command with `--resume`. The command verifies that the local checkout belongs to the intended repository and refuses to overwrite any local changes.
 
 ### Finish repository configuration
 
-Confirm that `ASTRA_SOURCE_READ_TOKEN` appears under Actions secrets, `ASTRA_UNITY_PATH` appears under Actions variables, and GitHub Pages is configured to deploy from GitHub Actions. Apply branch protection to `main` before allowing routine contributions.
+Confirm that `ASTRA_SOURCE_READ_TOKEN` appears under Actions secrets and that GitHub Pages is configured to deploy from GitHub Actions. In a multi-runner setup, verify `UNITY_EXECUTABLE` on each runner rather than creating `ASTRA_UNITY_PATH`. Apply branch protection to `main` before allowing routine contributions.
 
 The new repository's `release-lock.yml` selects the primary package revision and is safe to review publicly: it names repositories, paths, assemblies, and revisions but contains no credentials or source files. Add every private Astra dependency under `dependencies` and its published documentation URL under `xref.astra` when cross-package API links are needed. Use `main` while developing; pin every `ref` to a tag or immutable commit SHA before a release.
 

@@ -23,7 +23,6 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     env:
       ASTRA_SOURCE_READ_TOKEN: ${{ secrets.ASTRA_SOURCE_READ_TOKEN }}
-      UNITY_PATH: ${{ vars.ASTRA_UNITY_PATH }}
     steps:
       - uses: actions/checkout@v4
         with:

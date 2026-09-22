@@ -7,12 +7,19 @@ import tempfile
 import unittest
 from argparse import Namespace
 from pathlib import Path
+from unittest.mock import patch
 
 
 TEMPLATE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(TEMPLATE / "tools"))
 from lockfile import LockfileError, load_and_validate  # noqa: E402
-from astra_docs import configure_new_repository  # noqa: E402
+from astra_docs import (  # noqa: E402
+    assert_clean_resume_checkout,
+    configure_new_repository,
+    ensure_github_authentication,
+    parser,
+    wait_for_template_checkout,
+)
 
 
 class ToolkitTests(unittest.TestCase):
@@ -59,6 +66,55 @@ class ToolkitTests(unittest.TestCase):
             self.assertIn("Astra Health", (repository / "DocFx/docfx.json").read_text(encoding="utf-8"))
             self.assertNotIn("{{PACKAGE_NAME}}", (repository / "README.md").read_text(encoding="utf-8"))
             self.assertIn("https://electricdrillstudios.github.io/AstraHealthDocs/", (repository / "astra-docs.json").read_text(encoding="utf-8"))
+
+    def test_wait_for_template_checkout_fetches_then_checks_out_main(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary)
+            with patch("astra_docs.subprocess.run") as process, patch("astra_docs.run") as command:
+                process.side_effect = [
+                    subprocess.CompletedProcess([], 0),
+                    subprocess.CompletedProcess([], 1),
+                    subprocess.CompletedProcess([], 0),
+                    subprocess.CompletedProcess([], 0),
+                ]
+                with patch("astra_docs.time.sleep") as sleep:
+                    wait_for_template_checkout(destination)
+            self.assertEqual(process.call_count, 4)
+            sleep.assert_called_once_with(1)
+            command.assert_called_once_with("git", "-C", str(destination), "checkout", "--force", "-B", "main", "origin/main")
+
+    def test_resume_requires_the_expected_clean_checkout(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary)
+            subprocess.run(["git", "init", "--quiet", str(destination)], check=True)
+            subprocess.run(["git", "-C", str(destination), "remote", "add", "origin", "https://github.com/ElectricDrillStudios/AstraTagsDocs.git"], check=True)
+            assert_clean_resume_checkout(destination, "ElectricDrillStudios/AstraTagsDocs")
+            (destination / "notes.md").write_text("do not overwrite\n", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                assert_clean_resume_checkout(destination, "ElectricDrillStudios/AstraTagsDocs")
+
+    def test_new_parser_accepts_resume(self) -> None:
+        args = parser().parse_args([
+            "new", "Tags", "--package-id", "individual.emanuele-cisotto.astra-tags",
+            "--assembly", "Astra.Tags", "--namespace", "Astra.Tags",
+            "--source-repo", "Cis8/AstraTags", "--resume",
+        ])
+        self.assertTrue(args.resume)
+        self.assertIsNone(args.unity_path)
+
+    def test_github_login_runs_only_when_needed(self) -> None:
+        with patch("astra_docs.subprocess.run", return_value=subprocess.CompletedProcess([], 1)) as process, patch("astra_docs.run") as command:
+            ensure_github_authentication()
+        process.assert_called_once_with(
+            ["gh", "auth", "status", "--hostname", "github.com"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        command.assert_has_calls([
+            unittest.mock.call("gh", "auth", "login", "--hostname", "github.com", "--web", "--git-protocol", "https"),
+            unittest.mock.call("gh", "auth", "setup-git"),
+        ])
 
 
 if __name__ == "__main__":

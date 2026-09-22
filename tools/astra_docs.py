@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from lockfile import LockfileError, load_and_validate
@@ -19,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TOKEN_NAME = "ASTRA_SOURCE_READ_TOKEN"
 DEFAULT_OWNER = "ElectricDrillStudios"
 DEFAULT_TEMPLATE = f"{DEFAULT_OWNER}/AstraDocsTemplate"
+TEMPLATE_BRANCH = "main"
 
 
 def run(*args: str, cwd: Path | None = None, secret: bool = False) -> None:
@@ -29,6 +31,77 @@ def run(*args: str, cwd: Path | None = None, secret: bool = False) -> None:
         if secret:
             raise RuntimeError("secret configuration command failed") from error
         raise
+
+
+def wait_for_template_checkout(destination: Path, attempts: int = 30) -> None:
+    """Wait for GitHub to make the generated template branch available."""
+    for attempt in range(attempts):
+        subprocess.run(
+            ["git", "-C", str(destination), "fetch", "--quiet", "origin"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        available = subprocess.run(
+            ["git", "-C", str(destination), "rev-parse", "--verify", f"origin/{TEMPLATE_BRANCH}"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode == 0
+        if available:
+            run("git", "-C", str(destination), "checkout", "--force", "-B", TEMPLATE_BRANCH, f"origin/{TEMPLATE_BRANCH}")
+            return
+        if attempt < attempts - 1:
+            time.sleep(1)
+    raise RuntimeError("the generated repository did not receive its template branch within 30 seconds")
+
+
+def repository_exists(repository: str) -> bool:
+    return subprocess.run(
+        ["gh", "repo", "view", repository, "--json", "name"],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    ).returncode == 0
+
+
+def ensure_github_authentication() -> None:
+    authenticated = subprocess.run(
+        ["gh", "auth", "status", "--hostname", "github.com"],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    ).returncode == 0
+    if not authenticated:
+        print("GitHub CLI is not authenticated; opening browser login...")
+        run("gh", "auth", "login", "--hostname", "github.com", "--web", "--git-protocol", "https")
+    run("gh", "auth", "setup-git")
+
+
+def assert_clean_resume_checkout(destination: Path, repository: str) -> None:
+    if not (destination / ".git").exists():
+        raise ValueError(f"--resume requires a Git checkout at {destination}")
+    remote = subprocess.check_output(["git", "remote", "get-url", "origin"], cwd=destination, text=True).strip().rstrip("/")
+    expected = {
+        f"https://github.com/{repository}.git",
+        f"https://github.com/{repository}",
+        f"git@github.com:{repository}.git",
+        f"git@github.com:{repository}",
+    }
+    if remote not in expected:
+        raise ValueError(f"--resume requires origin to point at {repository}, not {remote}")
+    changes = subprocess.check_output(["git", "status", "--porcelain"], cwd=destination, text=True)
+    if changes:
+        raise ValueError(f"--resume refuses to overwrite local changes in {destination}")
+
+
+def commit_configuration(destination: Path) -> None:
+    run("git", "add", ".", cwd=destination)
+    changes = subprocess.check_output(["git", "status", "--porcelain"], cwd=destination, text=True)
+    if changes:
+        run("git", "commit", "-m", "Configure Astra documentation", cwd=destination)
+    else:
+        print("configuration commit already exists")
 
 
 def package_slug(name: str) -> str:
@@ -86,22 +159,33 @@ def command_new(args: argparse.Namespace) -> None:
         raise ValueError(f"set {TOKEN_NAME} to a fine-grained read-only contents token before bootstrapping")
     repo = repository_name(args.package_name)
     destination = Path(args.directory or repo).resolve()
-    if destination.exists():
-        raise ValueError(f"destination already exists: {destination}")
-    run("gh", "auth", "status")
     repository = f"{args.owner}/{repo}"
-    run("gh", "repo", "create", repository, "--public", "--template", args.template)
-    run("git", "clone", f"https://github.com/{repository}.git", str(destination))
+    ensure_github_authentication()
+    if args.resume:
+        if not repository_exists(repository):
+            raise ValueError(f"cannot resume because GitHub repository does not exist: {repository}")
+        if destination.exists():
+            assert_clean_resume_checkout(destination, repository)
+        else:
+            run("git", "clone", f"https://github.com/{repository}.git", str(destination))
+    else:
+        if destination.exists():
+            raise ValueError(f"destination already exists: {destination}; use --resume only for a failed bootstrap")
+        if repository_exists(repository):
+            raise ValueError(f"GitHub repository already exists: {repository}; use --resume only for a failed bootstrap")
+        run("gh", "repo", "create", repository, "--public", "--template", args.template)
+        run("git", "clone", f"https://github.com/{repository}.git", str(destination))
+    wait_for_template_checkout(destination)
     configure_new_repository(destination, args)
     run("gh", "secret", "set", TOKEN_NAME, "--repo", repository, "--body", os.environ[TOKEN_NAME], secret=True)
-    run("gh", "variable", "set", "ASTRA_UNITY_PATH", "--repo", repository, "--body", args.unity_path)
+    if args.unity_path:
+        run("gh", "variable", "set", "ASTRA_UNITY_PATH", "--repo", repository, "--body", args.unity_path)
     # Create Pages configuration, or update it when this is a repeatable bootstrap.
     try:
         run("gh", "api", "--method", "POST", f"repos/{repository}/pages", "-f", "build_type=workflow")
     except subprocess.CalledProcessError:
         run("gh", "api", "--method", "PUT", f"repos/{repository}/pages", "-f", "build_type=workflow")
-    run("git", "add", ".", cwd=destination)
-    run("git", "commit", "-m", "Configure Astra documentation", cwd=destination)
+    commit_configuration(destination)
     run("git", "push", "origin", "main", cwd=destination)
     print(f"Created https://{args.owner.lower()}.github.io/{repo}/")
 
@@ -186,8 +270,9 @@ def parser() -> argparse.ArgumentParser:
     create.add_argument("--title")
     create.add_argument("--owner", default=DEFAULT_OWNER, help="GitHub organization or user that will own the public docs repository")
     create.add_argument("--template", default=DEFAULT_TEMPLATE)
-    create.add_argument("--unity-path", required=True, help="absolute Unity executable path on the protected runner")
+    create.add_argument("--unity-path", help="single-runner override: absolute Unity executable path")
     create.add_argument("--directory")
+    create.add_argument("--resume", action="store_true", help="continue a failed bootstrap for the same clean checkout")
     create.set_defaults(handler=command_new)
     validate = commands.add_parser("validate", help="validate a release lock without credentials")
     validate.add_argument("--lock", default="release-lock.yml")
