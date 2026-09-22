@@ -55,9 +55,10 @@ class ToolkitTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             repository = Path(temporary) / "docs"
             shutil.copytree(TEMPLATE, repository, ignore=shutil.ignore_patterns("__pycache__"))
-            configure_new_repository(repository, Namespace(package_name="Health", package_id="com.electricdrill.astra-health", assembly="ElectricDrill.Astra.Health.Runtime", namespace="ElectricDrill.Astra.Health", source_repo="Cis8/AstraHealth", source_path="Packages/com.electricdrill.astra-health", ref="main", title=None))
+            configure_new_repository(repository, Namespace(package_name="Health", package_id="com.electricdrill.astra-health", assembly="ElectricDrill.Astra.Health.Runtime", namespace="ElectricDrill.Astra.Health", source_repo="Cis8/AstraHealth", source_path="Packages/com.electricdrill.astra-health", ref="main", title=None, owner="ElectricDrillStudios"))
             self.assertIn("Astra Health", (repository / "DocFx/docfx.json").read_text(encoding="utf-8"))
             self.assertNotIn("{{PACKAGE_NAME}}", (repository / "README.md").read_text(encoding="utf-8"))
+            self.assertIn("https://electricdrillstudios.github.io/AstraHealthDocs/", (repository / "astra-docs.json").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

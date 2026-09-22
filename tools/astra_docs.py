@@ -17,6 +17,8 @@ from lockfile import LockfileError, load_and_validate
 
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN_NAME = "ASTRA_SOURCE_READ_TOKEN"
+DEFAULT_OWNER = "ElectricDrillStudios"
+DEFAULT_TEMPLATE = f"{DEFAULT_OWNER}/AstraDocsTemplate"
 
 
 def run(*args: str, cwd: Path | None = None, secret: bool = False) -> None:
@@ -71,7 +73,7 @@ def configure_new_repository(root: Path, args: argparse.Namespace) -> None:
         "schema": 1,
         "package_name": args.package_name,
         "title": args.title or f"Astra {args.package_name}",
-        "pages_url": f"https://electricdrill.github.io/{repo}/",
+        "pages_url": f"https://{args.owner.lower()}.github.io/{repo}/",
     }
     (root / "astra-docs.json").write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
     render_template(root / "DocFx/docfx.json", root / "DocFx/docfx.json", config)
@@ -87,19 +89,20 @@ def command_new(args: argparse.Namespace) -> None:
     if destination.exists():
         raise ValueError(f"destination already exists: {destination}")
     run("gh", "auth", "status")
-    run("gh", "repo", "create", f"ElectricDrill/{repo}", "--public", "--template", args.template)
-    run("git", "clone", f"https://github.com/ElectricDrill/{repo}.git", str(destination))
+    repository = f"{args.owner}/{repo}"
+    run("gh", "repo", "create", repository, "--public", "--template", args.template)
+    run("git", "clone", f"https://github.com/{repository}.git", str(destination))
     configure_new_repository(destination, args)
-    run("gh", "secret", "set", TOKEN_NAME, "--repo", f"ElectricDrill/{repo}", "--body", os.environ[TOKEN_NAME], secret=True)
+    run("gh", "secret", "set", TOKEN_NAME, "--repo", repository, "--body", os.environ[TOKEN_NAME], secret=True)
     # Create Pages configuration, or update it when this is a repeatable bootstrap.
     try:
-        run("gh", "api", "--method", "POST", f"repos/ElectricDrill/{repo}/pages", "-f", "build_type=workflow")
+        run("gh", "api", "--method", "POST", f"repos/{repository}/pages", "-f", "build_type=workflow")
     except subprocess.CalledProcessError:
-        run("gh", "api", "--method", "PUT", f"repos/ElectricDrill/{repo}/pages", "-f", "build_type=workflow")
+        run("gh", "api", "--method", "PUT", f"repos/{repository}/pages", "-f", "build_type=workflow")
     run("git", "add", ".", cwd=destination)
     run("git", "commit", "-m", "Configure Astra documentation", cwd=destination)
     run("git", "push", "origin", "main", cwd=destination)
-    print(f"Created https://electricdrill.github.io/{repo}/")
+    print(f"Created https://{args.owner.lower()}.github.io/{repo}/")
 
 
 def command_validate(args: argparse.Namespace) -> None:
@@ -124,7 +127,7 @@ def template_root(args: argparse.Namespace) -> tuple[Path, tempfile.TemporaryDir
         return Path(args.template_path).resolve(), None
     temporary = tempfile.TemporaryDirectory(prefix="astra-template-")
     target = Path(temporary.name) / "template"
-    run("git", "clone", "--quiet", "https://github.com/ElectricDrill/AstraDocsTemplate.git", str(target))
+    run("git", "clone", "--quiet", f"https://github.com/{DEFAULT_TEMPLATE}.git", str(target))
     run("git", "checkout", "--quiet", args.template_ref, cwd=target)
     return target, temporary
 
@@ -180,7 +183,8 @@ def parser() -> argparse.ArgumentParser:
     create.add_argument("--source-path", help="path to the Unity package within the repository")
     create.add_argument("--ref", default="main")
     create.add_argument("--title")
-    create.add_argument("--template", default="ElectricDrill/AstraDocsTemplate")
+    create.add_argument("--owner", default=DEFAULT_OWNER, help="GitHub organization or user that will own the public docs repository")
+    create.add_argument("--template", default=DEFAULT_TEMPLATE)
     create.add_argument("--directory")
     create.set_defaults(handler=command_new)
     validate = commands.add_parser("validate", help="validate a release lock without credentials")
