@@ -2,6 +2,7 @@
 .github/workflows/publish-docs.yml
 .gitignore
 LICENSE
+index.md
 DocFx/docfx.json
 DocFx/filterConfig.yml
 DocFx/styles/astra.css

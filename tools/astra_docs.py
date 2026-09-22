@@ -200,6 +200,7 @@ def configure_new_repository(root: Path, args: argparse.Namespace) -> None:
     (root / "astra-docs.json").write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
     render_template(root / "DocFx/docfx.json", root / "DocFx/docfx.json", config)
     render_template(root / "README.md", root / "README.md", config)
+    render_template(root / "index.md", root / "index.md", config)
     write_lock(root, args)
 
 
@@ -278,7 +279,7 @@ def command_sync(args: argparse.Namespace) -> None:
         for relative in filter(None, managed):
             source = source_root / relative
             destination = root / relative
-            if relative == "DocFx/docfx.json":
+            if relative in {"DocFx/docfx.json", "index.md"}:
                 expected = (source.read_text(encoding="utf-8").replace("{{TITLE}}", config["title"])
                             .replace("{{PAGES_URL}}", config["pages_url"])
                             .replace("{{PACKAGE_NAME}}", config["package_name"]))
@@ -289,7 +290,7 @@ def command_sync(args: argparse.Namespace) -> None:
             if different:
                 changed.append(relative)
                 if args.apply:
-                    if relative == "DocFx/docfx.json":
+                    if relative in {"DocFx/docfx.json", "index.md"}:
                         render_template(source, destination, config)
                     else:
                         destination.parent.mkdir(parents=True, exist_ok=True)
