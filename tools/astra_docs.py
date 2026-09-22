@@ -94,6 +94,7 @@ def command_new(args: argparse.Namespace) -> None:
     run("git", "clone", f"https://github.com/{repository}.git", str(destination))
     configure_new_repository(destination, args)
     run("gh", "secret", "set", TOKEN_NAME, "--repo", repository, "--body", os.environ[TOKEN_NAME], secret=True)
+    run("gh", "variable", "set", "ASTRA_UNITY_PATH", "--repo", repository, "--body", args.unity_path)
     # Create Pages configuration, or update it when this is a repeatable bootstrap.
     try:
         run("gh", "api", "--method", "POST", f"repos/{repository}/pages", "-f", "build_type=workflow")
@@ -185,6 +186,7 @@ def parser() -> argparse.ArgumentParser:
     create.add_argument("--title")
     create.add_argument("--owner", default=DEFAULT_OWNER, help="GitHub organization or user that will own the public docs repository")
     create.add_argument("--template", default=DEFAULT_TEMPLATE)
+    create.add_argument("--unity-path", required=True, help="absolute Unity executable path on the protected runner")
     create.add_argument("--directory")
     create.set_defaults(handler=command_new)
     validate = commands.add_parser("validate", help="validate a release lock without credentials")

@@ -33,21 +33,17 @@ python3 tools/astra_docs.py new Health \
   --assembly com.electricdrill.astra-health.Runtime \
   --namespace 'ElectricDrill.Astra.Health' \
   --source-repo Cis8/AstraHealth \
-  --source-path Packages/com.electricdrill.astra-health
+  --source-path Packages/com.electricdrill.astra-health \
+  --unity-path /opt/Unity/Hub/Editor/2022.3.62f1/Editor/Unity
 ```
 
 `Health` must be a PascalCase name made from letters and digits. The command creates `ElectricDrillStudios/AstraHealthDocs` and a local `AstraHealthDocs` checkout inside the current directory. Omit `--source-path` only when the package lives at `Packages/<package-id>`. Use `--ref` to choose an initial source revision; it defaults to `main`. Use `--owner` only when the public repository belongs to a different GitHub organization or user.
 
-The bootstrap command requires `ASTRA_SOURCE_READ_TOKEN`; it stores the value as a GitHub Actions secret in the new documentation repository, never in its tracked files. It also enables GitHub Pages with GitHub Actions as its build source.
+The bootstrap command requires `ASTRA_SOURCE_READ_TOKEN`; it stores the value as a GitHub Actions secret in the new documentation repository, never in its tracked files. It also creates the `ASTRA_UNITY_PATH` Actions variable from `--unity-path` and enables GitHub Pages with GitHub Actions as its build source.
 
 ### Finish repository configuration
 
-In the new documentation repository, add this GitHub Actions repository variable:
-
-- Name: `ASTRA_UNITY_PATH`
-- Value: the absolute Unity executable path on the protected runner, for example `/opt/Unity/Hub/Editor/2022.3.62f1/Editor/Unity`.
-
-Confirm that `ASTRA_SOURCE_READ_TOKEN` appears under Actions secrets and that GitHub Pages is configured to deploy from GitHub Actions. Apply branch protection to `main` before allowing routine contributions.
+Confirm that `ASTRA_SOURCE_READ_TOKEN` appears under Actions secrets, `ASTRA_UNITY_PATH` appears under Actions variables, and GitHub Pages is configured to deploy from GitHub Actions. Apply branch protection to `main` before allowing routine contributions.
 
 The new repository's `release-lock.yml` selects the primary package revision and is safe to review publicly: it names repositories, paths, assemblies, and revisions but contains no credentials or source files. Add every private Astra dependency under `dependencies` and its published documentation URL under `xref.astra` when cross-package API links are needed. Use `main` while developing; pin every `ref` to a tag or immutable commit SHA before a release.
 
