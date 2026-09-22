@@ -17,7 +17,9 @@ from astra_docs import (  # noqa: E402
     assert_clean_resume_checkout,
     configure_new_repository,
     ensure_github_authentication,
+    grant_runner_group_access,
     parser,
+    source_path_or_repository_root,
     wait_for_template_checkout,
 )
 
@@ -101,6 +103,11 @@ class ToolkitTests(unittest.TestCase):
         ])
         self.assertTrue(args.resume)
         self.assertIsNone(args.unity_path)
+        self.assertEqual(args.runner_group, "packages-docs")
+
+    def test_omitted_source_path_uses_the_package_repository_root(self) -> None:
+        self.assertEqual(source_path_or_repository_root(None), ".")
+        self.assertEqual(source_path_or_repository_root("Packages/com.electricdrill.astra-health"), "Packages/com.electricdrill.astra-health")
 
     def test_github_login_runs_only_when_needed(self) -> None:
         with patch("astra_docs.subprocess.run", return_value=subprocess.CompletedProcess([], 1)) as process, patch("astra_docs.run") as command:
@@ -115,6 +122,15 @@ class ToolkitTests(unittest.TestCase):
             unittest.mock.call("gh", "auth", "login", "--hostname", "github.com", "--web", "--git-protocol", "https"),
             unittest.mock.call("gh", "auth", "setup-git"),
         ])
+
+    def test_runner_group_access_adds_only_the_new_repository(self) -> None:
+        group = {"id": 3, "name": "packages-docs", "visibility": "selected"}
+        with patch("astra_docs.github_api_data", return_value={"id": 42}), patch("astra_docs.run") as command:
+            grant_runner_group_access("ElectricDrillStudios", group, "ElectricDrillStudios/AstraTagsDocs")
+        command.assert_called_once_with(
+            "gh", "api", "--method", "PUT",
+            "orgs/ElectricDrillStudios/actions/runner-groups/3/repositories/42",
+        )
 
 
 if __name__ == "__main__":

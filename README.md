@@ -10,10 +10,10 @@ Use this procedure when adding documentation for a new package. It creates a pub
 
 Before creating the first project, prepare the shared publishing environment:
 
-- One or more protected Linux self-hosted GitHub Actions runners registered to the `ElectricDrillStudios` organization, each with the `astra-unity` label. Install the supported Unity LTS editor, Git, Python 3.11 or later, and .NET SDK 8 on every eligible runner. The standard publishing host is `Cis8/AstraPublishingHost`.
+- One or more protected Linux self-hosted GitHub Actions runners registered to the `ElectricDrillStudios` organization, each with the `astra-unity` label. Install the supported Unity LTS editor, Git, Python 3.11 or later, and .NET SDK 8 on every eligible runner. Verify it with `dotnet --info`; the workflow uses the runner's installed SDK and does not attempt a system-wide installation. The standard publishing host is `Cis8/AstraPublishingHost`.
 - Restrict the runner group to trusted `Astra*Docs` repositories only. Because the documentation repositories are public and the runner consumes a secret, protect `main` so that only trusted maintainers can push to it or change workflows.
 - The `ElectricDrillStudios/AstraDocsTemplate` GitHub repository must have **Template repository** enabled in its General settings.
-- An authenticated GitHub CLI session that may create public repositories in `ElectricDrillStudios` and configure their Pages settings and secrets. Authenticate it for HTTPS Git operations before bootstrapping:
+- An authenticated GitHub CLI session that may create public repositories in `ElectricDrillStudios`, configure their Pages settings and secrets, and add them to the `packages-docs` runner group. The first bootstrap requests the one-time `admin:org` OAuth scope needed to manage runner-group access. Authenticate it for HTTPS Git operations before bootstrapping:
 
   ```sh
   gh auth login --hostname github.com --web --git-protocol https
@@ -50,9 +50,9 @@ python3 tools/astra_docs.py new Health \
   --source-path Packages/com.electricdrill.astra-health
 ```
 
-`Health` must be a PascalCase name made from letters and digits. The command creates `ElectricDrillStudios/AstraHealthDocs` and a local `AstraHealthDocs` checkout inside the current directory. Omit `--source-path` only when the package lives at `Packages/<package-id>`. Use `--ref` to choose an initial source revision; it defaults to `main`. Use `--owner` only when the public repository belongs to a different GitHub organization or user.
+`Health` must be a PascalCase name made from letters and digits. The command creates `ElectricDrillStudios/AstraHealthDocs` and a local `AstraHealthDocs` checkout inside the current directory. Omit `--source-path` when the private repository is the package itself: the source path then defaults to `.`. For a Unity project or monorepo, pass the package directory explicitly, for example `Packages/com.electricdrill.astra-health`.  Use `--ref` to choose an initial source revision; it defaults to `main`. Use `--owner` only when the public repository belongs to a different GitHub organization or user.
 
-The bootstrap command requires `ASTRA_SOURCE_READ_TOKEN`; it stores the value as a GitHub Actions secret in the new documentation repository and enables GitHub Pages with GitHub Actions as its build source. If GitHub CLI is not logged in, the command starts its browser-based HTTPS login automatically. In a single-runner setup, `--unity-path` remains available to set the repository-level `ASTRA_UNITY_PATH` override.
+The bootstrap command requires `ASTRA_SOURCE_READ_TOKEN`; it stores the value as a GitHub Actions secret in the new documentation repository, grants that repository access to the `packages-docs` runner group, and enables GitHub Pages with GitHub Actions as its build source. If GitHub CLI is not logged in, the command starts its browser-based HTTPS login automatically. On the first run, approve the `admin:org` scope so it can manage runner-group access. Use `--runner-group <name>` if the organization uses a different group. In a single-runner setup, `--unity-path` remains available to set the repository-level `ASTRA_UNITY_PATH` override.
 
 If a bootstrap is interrupted after GitHub creates the repository, authenticate again and rerun the same command with `--resume`. The command verifies that the local checkout belongs to the intended repository and refuses to overwrite any local changes.
 

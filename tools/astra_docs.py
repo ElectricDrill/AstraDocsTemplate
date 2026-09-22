@@ -20,7 +20,9 @@ ROOT = Path(__file__).resolve().parents[1]
 TOKEN_NAME = "ASTRA_SOURCE_READ_TOKEN"
 DEFAULT_OWNER = "ElectricDrillStudios"
 DEFAULT_TEMPLATE = f"{DEFAULT_OWNER}/AstraDocsTemplate"
+DEFAULT_RUNNER_GROUP = "packages-docs"
 TEMPLATE_BRANCH = "main"
+DEFAULT_SOURCE_PATH = "."
 
 
 def run(*args: str, cwd: Path | None = None, secret: bool = False) -> None:
@@ -65,7 +67,7 @@ def repository_exists(repository: str) -> bool:
     ).returncode == 0
 
 
-def ensure_github_authentication() -> None:
+def ensure_github_authentication(require_runner_admin: bool = False) -> None:
     authenticated = subprocess.run(
         ["gh", "auth", "status", "--hostname", "github.com"],
         check=False,
@@ -74,8 +76,50 @@ def ensure_github_authentication() -> None:
     ).returncode == 0
     if not authenticated:
         print("GitHub CLI is not authenticated; opening browser login...")
-        run("gh", "auth", "login", "--hostname", "github.com", "--web", "--git-protocol", "https")
+        login = ["gh", "auth", "login", "--hostname", "github.com", "--web", "--git-protocol", "https"]
+        if require_runner_admin:
+            login.extend(["--scopes", "admin:org"])
+        run(*login)
+    if require_runner_admin:
+        run("gh", "auth", "refresh", "--hostname", "github.com", "--scopes", "admin:org")
     run("gh", "auth", "setup-git")
+
+
+def github_api_data(endpoint: str) -> dict:
+    try:
+        return json.loads(subprocess.check_output(["gh", "api", endpoint], text=True))
+    except (subprocess.CalledProcessError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"cannot read GitHub API endpoint {endpoint}") from error
+
+
+def runner_group(owner: str, name: str) -> dict:
+    endpoint = f"orgs/{owner}/actions/runner-groups?per_page=100"
+    try:
+        groups = github_api_data(endpoint).get("runner_groups", [])
+    except RuntimeError as error:
+        raise RuntimeError(
+            "cannot read organization runner groups; authorize GitHub CLI with the admin:org scope and use an organization owner account"
+        ) from error
+    for group in groups:
+        if group.get("name") == name:
+            return group
+    raise ValueError(f"runner group not found in {owner}: {name}")
+
+
+def grant_runner_group_access(owner: str, group: dict, repository: str) -> None:
+    visibility = group.get("visibility")
+    if visibility == "all":
+        print(f"runner group {group['name']} already grants every repository access")
+        return
+    if visibility != "selected":
+        raise ValueError(f"runner group {group['name']} has unsupported visibility: {visibility}")
+    repository_id = github_api_data(f"repos/{repository}").get("id")
+    if not isinstance(repository_id, int):
+        raise RuntimeError(f"GitHub did not return a repository ID for {repository}")
+    run(
+        "gh", "api", "--method", "PUT",
+        f"orgs/{owner}/actions/runner-groups/{group['id']}/repositories/{repository_id}",
+    )
 
 
 def assert_clean_resume_checkout(destination: Path, repository: str) -> None:
@@ -112,6 +156,11 @@ def repository_name(name: str) -> str:
     if not re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", name):
         raise ValueError("package name must be PascalCase letters/digits (for example Health)")
     return f"Astra{name}Docs"
+
+
+def source_path_or_repository_root(value: str | None) -> str:
+    """Use the repository root when the private repository is one Unity package."""
+    return value or DEFAULT_SOURCE_PATH
 
 
 def read_config(root: Path) -> dict[str, str]:
@@ -160,7 +209,8 @@ def command_new(args: argparse.Namespace) -> None:
     repo = repository_name(args.package_name)
     destination = Path(args.directory or repo).resolve()
     repository = f"{args.owner}/{repo}"
-    ensure_github_authentication()
+    ensure_github_authentication(require_runner_admin=True)
+    target_runner_group = runner_group(args.owner, args.runner_group)
     if args.resume:
         if not repository_exists(repository):
             raise ValueError(f"cannot resume because GitHub repository does not exist: {repository}")
@@ -178,6 +228,7 @@ def command_new(args: argparse.Namespace) -> None:
     wait_for_template_checkout(destination)
     configure_new_repository(destination, args)
     run("gh", "secret", "set", TOKEN_NAME, "--repo", repository, "--body", os.environ[TOKEN_NAME], secret=True)
+    grant_runner_group_access(args.owner, target_runner_group, repository)
     if args.unity_path:
         run("gh", "variable", "set", "ASTRA_UNITY_PATH", "--repo", repository, "--body", args.unity_path)
     # Create Pages configuration, or update it when this is a repeatable bootstrap.
@@ -270,6 +321,7 @@ def parser() -> argparse.ArgumentParser:
     create.add_argument("--title")
     create.add_argument("--owner", default=DEFAULT_OWNER, help="GitHub organization or user that will own the public docs repository")
     create.add_argument("--template", default=DEFAULT_TEMPLATE)
+    create.add_argument("--runner-group", default=DEFAULT_RUNNER_GROUP, help="organization runner group to authorize for the new repository")
     create.add_argument("--unity-path", help="single-runner override: absolute Unity executable path")
     create.add_argument("--directory")
     create.add_argument("--resume", action="store_true", help="continue a failed bootstrap for the same clean checkout")
@@ -293,8 +345,8 @@ def parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = parser().parse_args()
-    if getattr(args, "command", None) == "new" and not args.source_path:
-        args.source_path = f"Packages/{args.package_id}"
+    if getattr(args, "command", None) == "new":
+        args.source_path = source_path_or_repository_root(args.source_path)
     try:
         args.handler(args)
     except (LockfileError, ValueError, OSError, RuntimeError, subprocess.CalledProcessError) as error:
