@@ -1,0 +1,4 @@
+/* The modern template may render this when a custom template re-enables contribution UI. */
+.contribution, .edit-this-page, a[title="Edit this page"] {
+  display: none !important;
+}

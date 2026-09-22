@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 64" role="img" aria-label="Astra">
+  <rect width="240" height="64" rx="10" fill="#181d2a"/>
+  <path fill="#6fc6ff" d="m33 12 15 40h-9l-3-9H22l-3 9h-9l15-40zm-4 23h5l-2.5-8z"/>
+  <text x="66" y="42" fill="#fff" font-family="Arial, sans-serif" font-size="29" font-weight="700">ASTRA</text>
+</svg>

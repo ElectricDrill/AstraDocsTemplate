@@ -1,0 +1,16 @@
+# Public, reviewable input for one documentation/release build.
+# Use main while iterating. Replace every ref with an immutable commit SHA or tag for a release.
+version: 1
+package:
+  id: com.electricdrill.astra-package-name
+  assembly: ElectricDrill.Astra.PackageName.Runtime
+  namespace: ElectricDrill.Astra.PackageName
+  source:
+    repository: Cis8/AstraPackageName
+    path: Packages/com.electricdrill.astra-package-name
+    files: Runtime/**/*.cs
+    ref: main
+dependencies: []
+xref:
+  unity: https://normanderwan.github.io/UnityXrefMaps/xrefmap.yml
+  astra: []

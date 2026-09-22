@@ -1,0 +1,12 @@
+# Generated documentation and private build hand-off files.
+_site/
+docs/
+.astra-docfx.json
+.astra-workspace/
+__pycache__/
+*.csproj
+*.sln
+Library/
+Temp/
+Logs/
+UserSettings/

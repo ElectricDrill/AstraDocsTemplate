@@ -1,0 +1,52 @@
+name: Publish documentation
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # The standard private Unity host is installed on this protected runner.
+    runs-on: [self-hosted, astra-unity]
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      ASTRA_SOURCE_READ_TOKEN: ${{ secrets.ASTRA_SOURCE_READ_TOKEN }}
+      UNITY_PATH: ${{ vars.ASTRA_UNITY_PATH }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - uses: actions/checkout@v4
+        with:
+          repository: Cis8/AstraPublishingHost
+          token: ${{ secrets.ASTRA_SOURCE_READ_TOKEN }}
+          path: .astra-host
+          persist-credentials: false
+      - name: Validate lock and build the public site
+        run: >-
+          python .astra-host/tools/build_docs.py
+          --lock release-lock.yml
+          --docs-root "$GITHUB_WORKSPACE"
+          --host-root "$GITHUB_WORKSPACE/.astra-host"
+          --output "$RUNNER_TEMP/astra-site"
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ runner.temp }}/astra-site
+      - id: deployment
+        uses: actions/deploy-pages@v4
