@@ -6,6 +6,7 @@ index.md
 DocFx/docfx.json
 DocFx/filterConfig.yml
 DocFx/styles/astra.css
+DocFx/templates/astra/public/main.css
 DocFx/images/astra-logo.svg
 toc.yml
 tools/astra_docs.py

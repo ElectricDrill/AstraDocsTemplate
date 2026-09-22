@@ -20,7 +20,7 @@
       { "files": ["DocFx/images/**"] }
     ],
     "output": "_site",
-    "template": ["default", "modern"],
+    "template": ["default", "modern", "DocFx/templates/astra"],
     "disableGitFeatures": true,
     "globalMetadata": {
       "_appName": "{{TITLE}}",
@@ -31,7 +31,6 @@
       "_disableContribution": true,
       "_baseUrl": "{{PAGES_URL}}"
     },
-    "xref": [],
-    "styles": ["DocFx/styles/astra.css"]
+    "xref": []
   }
 }
